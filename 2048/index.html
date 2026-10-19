@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>2048</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    background: #faf8ef; color: #776e65;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 18px 12px 28px; user-select: none; -webkit-user-select: none;
+  }
+  .wrap { width: 100%; max-width: 420px; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  h1 { font-size: 44px; font-weight: 800; color: #776e65; }
+  .scores { display: flex; gap: 8px; }
+  .score-box {
+    background: #bbada0; color: #fff; border-radius: 6px;
+    padding: 6px 14px; text-align: center; min-width: 76px;
+  }
+  .score-box .label { font-size: 11px; color: #eee4da; }
+  .score-box .value { font-size: 20px; font-weight: 700; }
+  .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .hint { font-size: 13px; color: #a29382; }
+  #newGame {
+    background: #8f7a66; color: #f9f6f2; border: none; border-radius: 6px;
+    font-size: 15px; font-weight: 700; padding: 10px 18px; cursor: pointer;
+    font-family: inherit;
+  }
+  #newGame:active { background: #7f6c5c; }
+  #board {
+    position: relative; width: 100%; aspect-ratio: 1;
+    background: #bbada0; border-radius: 8px; padding: 8px;
+    display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr);
+    gap: 8px; touch-action: none;
+  }
+  .cell { background: rgba(238, 228, 218, 0.35); border-radius: 6px; }
+  .tile {
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; color: #776e65; background: #eee4da;
+    animation: pop 0.12s ease;
+  }
+  @keyframes pop { 0% { transform: scale(0.6); } 100% { transform: scale(1); } }
+  .tile.t2    { background: #eee4da; }
+  .tile.t4    { background: #ede0c8; }
+  .tile.t8    { background: #f2b179; color: #f9f6f2; }
+  .tile.t16   { background: #f59563; color: #f9f6f2; }
+  .tile.t32   { background: #f67c5f; color: #f9f6f2; }
+  .tile.t64   { background: #f65e3b; color: #f9f6f2; }
+  .tile.t128  { background: #edcf72; color: #f9f6f2; }
+  .tile.t256  { background: #edcc61; color: #f9f6f2; }
+  .tile.t512  { background: #edc850; color: #f9f6f2; }
+  .tile.t1024 { background: #edc53f; color: #f9f6f2; }
+  .tile.t2048 { background: #edc22e; color: #f9f6f2; }
+  .tile.tsuper{ background: #3c3a32; color: #f9f6f2; }
+  #overlay {
+    position: fixed; inset: 0; background: rgba(238, 228, 218, 0.75);
+    display: none; align-items: center; justify-content: center; z-index: 10;
+  }
+  #overlay.show { display: flex; }
+  .panel {
+    background: #faf8ef; border-radius: 10px; padding: 28px 34px; text-align: center;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+  }
+  .panel h2 { font-size: 30px; margin-bottom: 8px; }
+  .panel p { font-size: 15px; margin-bottom: 16px; color: #a29382; }
+  .panel button {
+    background: #8f7a66; color: #f9f6f2; border: none; border-radius: 6px;
+    font-size: 16px; font-weight: 700; padding: 10px 22px; cursor: pointer; font-family: inherit;
+    margin: 0 4px;
+  }
+  footer { margin-top: 14px; font-size: 12px; color: #c0b3a4; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>2048</h1>
+    <div class="scores">
+      <div class="score-box"><div class="label">分数</div><div class="value" id="score">0</div></div>
+      <div class="score-box"><div class="label">最高分</div><div class="value" id="best">0</div></div>
+    </div>
+  </header>
+  <div class="controls">
+    <div class="hint">滑动屏幕合并数字，合出 2048 获胜</div>
+    <button id="newGame">新游戏</button>
+  </div>
+  <div id="board"></div>
+  <footer>单文件离线可玩 · 最高分保存在本机</footer>
+</div>
+<div id="overlay">
+  <div class="panel">
+    <h2 id="overlayTitle">游戏结束</h2>
+    <p id="overlayText"></p>
+    <button id="againBtn">再来一局</button>
+    <button id="continueBtn" style="display:none">继续挑战</button>
+  </div>
+</div>
+<script>
+"use strict";
+var SIZE = 4;
+var grid, score, best, over, won, keepGoing;
+
+function emptyGrid() {
+  var g = [];
+  for (var i = 0; i < SIZE; i++) { g.push([0, 0, 0, 0]); }
+  return g;
+}
+
+function slideRow(row) {
+  var vals = row.filter(function (v) { return v !== 0; });
+  var out = [], s = 0, i = 0;
+  while (i < vals.length) {
+    if (i + 1 < vals.length && vals[i] === vals[i + 1]) {
+      var m = vals[i] * 2;
+      out.push(m); s += m; i += 2;
+    } else {
+      out.push(vals[i]); i += 1;
+    }
+  }
+  while (out.length < SIZE) out.push(0);
+  var moved = false;
+  for (var k = 0; k < SIZE; k++) { if (out[k] !== row[k]) { moved = true; break; } }
+  return { row: out, score: s, moved: moved };
+}
+
+// dir: 0=左 1=上 2=右 3=下
+function moveGrid(g, dir) {
+  var ng = g.map(function (r) { return r.slice(); });
+  var total = 0, moved = false, i, j, line, r;
+  for (i = 0; i < SIZE; i++) {
+    if (dir === 0) line = [ng[i][0], ng[i][1], ng[i][2], ng[i][3]];
+    else if (dir === 2) line = [ng[i][3], ng[i][2], ng[i][1], ng[i][0]];
+    else if (dir === 1) line = [ng[0][i], ng[1][i], ng[2][i], ng[3][i]];
+    else line = [ng[3][i], ng[2][i], ng[1][i], ng[0][i]];
+    r = slideRow(line);
+    total += r.score;
+    if (r.moved) moved = true;
+    if (dir === 0) { ng[i] = r.row; }
+    else if (dir === 2) { ng[i] = [r.row[3], r.row[2], r.row[1], r.row[0]]; }
+    else if (dir === 1) { for (j = 0; j < SIZE; j++) ng[j][i] = r.row[j]; }
+    else { for (j = 0; j < SIZE; j++) ng[3 - j][i] = r.row[j]; }
+  }
+  return { grid: ng, score: total, moved: moved };
+}
+
+function emptyCells(g) {
+  var cells = [];
+  for (var i = 0; i < SIZE; i++)
+    for (var j = 0; j < SIZE; j++)
+      if (g[i][j] === 0) cells.push([i, j]);
+  return cells;
+}
+
+function addRandomTile(g) {
+  var cells = emptyCells(g);
+  if (!cells.length) return;
+  var c = cells[Math.floor(Math.random() * cells.length)];
+  g[c[0]][c[1]] = Math.random() < 0.9 ? 2 : 4;
+}
+
+function canMove(g) {
+  if (emptyCells(g).length) return true;
+  for (var i = 0; i < SIZE; i++)
+    for (var j = 0; j < SIZE; j++) {
+      if (j + 1 < SIZE && g[i][j] === g[i][j + 1]) return true;
+      if (i + 1 < SIZE && g[i][j] === g[i + 1][j]) return true;
+    }
+  return false;
+}
+
+function hasWon(g) {
+  for (var i = 0; i < SIZE; i++)
+    for (var j = 0; j < SIZE; j++)
+      if (g[i][j] >= 2048) return true;
+  return false;
+}
+
+function loadBest() {
+  try { return parseInt(window.localStorage.getItem("game2048_best") || "0", 10) || 0; }
+  catch (e) { return 0; }
+}
+function saveBest(v) {
+  try { window.localStorage.setItem("game2048_best", String(v)); } catch (e) {}
+}
+
+function newGame() {
+  grid = emptyGrid();
+  score = 0; over = false; won = false; keepGoing = false;
+  best = loadBest();
+  addRandomTile(grid); addRandomTile(grid);
+  hideOverlay();
+  render();
+}
+
+function doMove(dir) {
+  if (over || (won && !keepGoing)) return;
+  var r = moveGrid(grid, dir);
+  if (!r.moved) return;
+  grid = r.grid;
+  score += r.score;
+  if (score > best) { best = score; saveBest(best); }
+  addRandomTile(grid);
+  if (!won && hasWon(grid)) {
+    won = true;
+    showOverlay("你赢了！", "合出了 2048，继续挑战更高分吧", true);
+  } else if (!canMove(grid)) {
+    over = true;
+    showOverlay("游戏结束", "本局得分 " + score, false);
+  }
+  render();
+}
+
+function tileClass(v) {
+  if (v <= 2048) return "t" + v;
+  return "tsuper";
+}
+function fontSize(v) {
+  var digits = String(v).length;
+  if (digits <= 2) return "clamp(28px, 9vw, 44px)";
+  if (digits === 3) return "clamp(24px, 7.5vw, 38px)";
+  if (digits === 4) return "clamp(20px, 6.5vw, 32px)";
+  return "clamp(16px, 5.5vw, 26px)";
+}
+
+function render() {
+  var board = document.getElementById("board");
+  board.innerHTML = "";
+  for (var i = 0; i < SIZE; i++)
+    for (var j = 0; j < SIZE; j++) {
+      var v = grid[i][j];
+      var d = document.createElement("div");
+      if (v === 0) {
+        d.className = "cell";
+      } else {
+        d.className = "tile " + tileClass(v);
+        d.textContent = v;
+        d.style.fontSize = fontSize(v);
+      }
+      board.appendChild(d);
+    }
+  document.getElementById("score").textContent = score;
+  document.getElementById("best").textContent = best;
+}
+
+function showOverlay(title, text, canContinue) {
+  document.getElementById("overlayTitle").textContent = title;
+  document.getElementById("overlayText").textContent = text;
+  document.getElementById("continueBtn").style.display = canContinue ? "" : "none";
+  document.getElementById("overlay").classList.add("show");
+}
+function hideOverlay() {
+  document.getElementById("overlay").classList.remove("show");
+}
+
+function bindInput() {
+  var board = document.getElementById("board");
+  var sx = 0, sy = 0;
+  board.addEventListener("touchstart", function (e) {
+    var t = e.changedTouches[0];
+    sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  board.addEventListener("touchend", function (e) {
+    var t = e.changedTouches[0];
+    var dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
+    if (Math.abs(dx) > Math.abs(dy)) doMove(dx > 0 ? 2 : 0);
+    else doMove(dy > 0 ? 3 : 1);
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener("keydown", function (e) {
+    var map = { ArrowLeft: 0, ArrowUp: 1, ArrowRight: 2, ArrowDown: 3, a: 0, w: 1, d: 2, s: 3, A: 0, W: 1, D: 2, S: 3 };
+    if (e.key in map) { doMove(map[e.key]); e.preventDefault(); }
+  });
+
+  document.getElementById("newGame").addEventListener("click", newGame);
+  document.getElementById("againBtn").addEventListener("click", newGame);
+  document.getElementById("continueBtn").addEventListener("click", function () {
+    keepGoing = true;
+    hideOverlay();
+  });
+}
+
+if (typeof document !== "undefined" && document.getElementById) {
+  bindInput();
+  newGame();
+}
+</script>
+</body>
+</html>
