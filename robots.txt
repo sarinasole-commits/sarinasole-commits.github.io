@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://sarinasole-commits.github.io/sitemap.xml
